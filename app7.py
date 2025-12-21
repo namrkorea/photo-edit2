@@ -96,7 +96,7 @@ with tab2:
                     
                     # 4. 결과 보여주기
                     final_result = Image.fromarray(inpainted_img)
-                    st.image(final_result, caption="지우기 완료!", use_column_width=True)
+                    st.image(final_result, caption="지우기 완료!", use_container_width=True)
 
                     # 다운로드
                     buf2 = io.BytesIO()
@@ -107,4 +107,5 @@ with tab2:
                         data=byte_im2,
                         file_name="erased_photo.jpg",
                         mime="image/jpeg"
+
                     )
