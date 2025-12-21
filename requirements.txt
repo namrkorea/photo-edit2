@@ -1,4 +1,4 @@
-streamlit
+streamlit==1.32.0
 streamlit-drawable-canvas
 altair
 pandas
@@ -6,3 +6,4 @@ pillow
 numpy
 rembg
 onnxruntime
+
