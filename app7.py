@@ -9,16 +9,21 @@ from streamlit_drawable_canvas import st_canvas
 import base64
 
 # ==========================================
-# 🚨 [시스템 패치] 사라진 image_to_url 함수 복구
+# 🚨 [시스템 패치] 사라진 image_to_url 함수 강제 주입
+# 이 코드가 있어야 붓 도구에 이미지를 넣어도 에러가 안 납니다.
 # ==========================================
 def fixed_image_to_url(image, width, clamp, channels, output_format, image_id, allow_emoji=False):
+    """
+    Streamlit의 사라진 image_to_url 기능을 대체하는 함수입니다.
+    이미지를 Base64 문자열로 변환하여 HTML 캔버스가 이해할 수 있게 만듭니다.
+    """
     buffered = io.BytesIO()
     image.save(buffered, format="PNG")
     img_str = base64.b64encode(buffered.getvalue()).decode()
     return f"data:image/png;base64,{img_str}"
 
-if not hasattr(st_image, 'image_to_url'):
-    st_image.image_to_url = fixed_image_to_url
+# 조건 따지지 않고 무조건 덮어씌웁니다. (가장 강력한 방법)
+st_image.image_to_url = fixed_image_to_url
 # ==========================================
 
 # 1. 앱 설정
@@ -28,8 +33,7 @@ st.title("✨ AI 매직 포토 에디터")
 st.write("배경을 지우거나, 원하지 않는 물체를 삭제해보세요!")
 
 # 시스템 상태 표시
-if hasattr(st_image, 'image_to_url'):
-    st.success("✅ 시스템 정상 가동 중")
+st.caption("✅ 시스템 패치 적용 완료")
 
 # 탭 나누기
 tab1, tab2 = st.tabs(["✂️ 배경 제거", "🪄 물체 지우기"])
@@ -79,44 +83,28 @@ with tab2:
         
         resized_image = image_to_erase.resize((canvas_width, h_size))
 
-        # ---------------------------------------------------------
-        # [핵심 수정] 이미지를 캔버스용 문자열(Base64)로 직접 변환
-        # 이 과정을 거치면 이미지가 안 보일 수가 없습니다.
-        # ---------------------------------------------------------
-        def pil_to_base64(img):
-            buffered = io.BytesIO()
-            img.save(buffered, format="PNG")
-            img_str = base64.b64encode(buffered.getvalue()).decode()
-            return f"data:image/png;base64,{img_str}"
-
-        # 변환된 이미지 문자열 준비
-        bg_image_url = pil_to_base64(resized_image)
-        # ---------------------------------------------------------
-
         stroke_width = st.slider("붓 크기 조절", 1, 50, 15)
         
         # 캔버스 그리기
-        try:
-            canvas_result = st_canvas(
-                fill_color="rgba(255, 165, 0, 0.3)",
-                stroke_width=stroke_width,
-                stroke_color="#ff0000",
-                background_image=bg_image_url,  # [중요] 여기에 변환된 문자열을 넣습니다.
-                update_streamlit=True,
-                height=h_size,
-                width=canvas_width,
-                drawing_mode="freedraw",
-                key="canvas",
-            )
-        except AttributeError:
-            st.error("⚠️ 페이지를 새로고침 해주세요.")
-            st.stop()
+        # [수정] background_image에 다시 PIL 이미지(resized_image)를 넣습니다.
+        # 위쪽의 '시스템 패치' 덕분에 이제 에러가 나지 않습니다.
+        canvas_result = st_canvas(
+            fill_color="rgba(255, 165, 0, 0.3)",
+            stroke_width=stroke_width,
+            stroke_color="#ff0000",
+            background_image=resized_image,  # 여기가 핵심! 이미지를 직접 넣음
+            update_streamlit=True,
+            height=h_size,
+            width=canvas_width,
+            drawing_mode="freedraw",
+            key="canvas",
+        )
 
         if st.button("선택한 영역 지우기"):
             if canvas_result.image_data is not None:
                 with st.spinner("지우는 중..."):
                     try:
-                        # OpenCV 처리에는 원본 이미지(resized_image)를 사용해야 함
+                        # OpenCV 처리
                         img_array = np.array(resized_image)
                         mask_data = canvas_result.image_data
                         mask = mask_data[:, :, 3].astype('uint8')
@@ -140,4 +128,3 @@ with tab2:
                         st.error(f"오류: {e}")
             else:
                 st.warning("먼저 지우고 싶은 부분을 칠해주세요!")
-
