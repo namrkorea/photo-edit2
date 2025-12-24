@@ -1,9 +1,10 @@
-streamlit
+streamlit==1.32.0
 rembg
 Pillow
 numpy
 streamlit-drawable-canvas>=0.9.3
 opencv-python-headless
 watchdog
+
 
 
