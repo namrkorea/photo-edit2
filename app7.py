@@ -5,12 +5,22 @@ import numpy as np
 from rembg import remove
 import cv2
 from streamlit_drawable_canvas import st_canvas
+import base64  # 필수: 이미지를 문자로 변환하는 도구
 
 # 1. 앱 설정
 st.set_page_config(page_title="AI 매직 포토", page_icon="✨")
 
 st.title("✨ AI 매직 포토 에디터")
 st.write("배경을 지우거나, 원하지 않는 물체를 삭제해보세요!")
+
+# --- [핵심 해결책] 이미지를 Base64(문자열)로 변환하는 함수 ---
+# 이 함수 덕분에 스트림릿 버전을 타지 않습니다.
+def pil_to_base64(img):
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    return f"data:image/png;base64,{img_str}"
+# -------------------------------------------------------
 
 # 탭 나누기
 tab1, tab2 = st.tabs(["✂️ 배경 제거", "🪄 물체 지우기"])
@@ -22,15 +32,21 @@ with tab1:
 
     if bg_file:
         image = Image.open(bg_file)
-        # 중요: streamlit 1.32.0 호환을 위해 use_column_width 사용
-        st.image(image, caption="원본 사진", use_column_width=True)
+        # 최신 버전 호환성을 위해 use_container_width 우선 사용 (없으면 에러 무시)
+        try:
+            st.image(image, caption="원본 사진", use_container_width=True)
+        except:
+            st.image(image, caption="원본 사진", use_column_width=True)
 
         if st.button("배경 제거 실행 (AI)"):
             with st.spinner("AI가 배경을 지우는 중입니다..."):
                 try:
                     output = remove(image)
                     st.success("완료!")
-                    st.image(output, caption="배경 제거 결과", use_column_width=True)
+                    try:
+                        st.image(output, caption="배경 제거 결과", use_container_width=True)
+                    except:
+                        st.image(output, caption="배경 제거 결과", use_column_width=True)
 
                     buf = io.BytesIO()
                     output.save(buf, format="PNG")
@@ -54,13 +70,14 @@ with tab2:
     if erase_file:
         image_to_erase = Image.open(erase_file).convert("RGB")
         
-        # 캔버스 너비 설정 (모바일 최적화)
+        # 캔버스 너비 설정
         canvas_width = 350
-        
         w_percent = (canvas_width / float(image_to_erase.size[0]))
         h_size = int((float(image_to_erase.size[1]) * float(w_percent)))
-        
         resized_image = image_to_erase.resize((canvas_width, h_size))
+
+        # [중요] 이미지를 캔버스용 문자로 변환 (에러 원천 차단)
+        bg_image_url = pil_to_base64(resized_image)
 
         stroke_width = st.slider("붓 크기 조절", 1, 50, 15)
         
@@ -69,7 +86,7 @@ with tab2:
             fill_color="rgba(255, 165, 0, 0.3)",
             stroke_width=stroke_width,
             stroke_color="#ff0000",
-            background_image=resized_image,
+            background_image=bg_image_url,  # 여기에 변환된 문자를 넣습니다!
             update_streamlit=True,
             height=h_size,
             width=canvas_width,
@@ -84,15 +101,17 @@ with tab2:
                         img_array = np.array(resized_image)
                         
                         mask_data = canvas_result.image_data
-                        # 중요: 데이터 타입 변환
                         mask = mask_data[:, :, 3].astype('uint8')
                         
-                        # OpenCV Inpainting
                         inpainted_img = cv2.inpaint(img_array, mask, 3, cv2.INPAINT_TELEA)
                         
                         final_result = Image.fromarray(inpainted_img)
                         st.success("삭제 완료!")
-                        st.image(final_result, caption="지우기 완료!", use_column_width=True)
+                        
+                        try:
+                            st.image(final_result, caption="지우기 완료!", use_container_width=True)
+                        except:
+                            st.image(final_result, caption="지우기 완료!", use_column_width=True)
 
                         buf2 = io.BytesIO()
                         final_result.save(buf2, format="JPEG")
