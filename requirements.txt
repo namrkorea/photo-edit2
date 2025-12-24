@@ -1,9 +1,9 @@
-streamlit==1.32.0
-streamlit-drawable-canvas
-altair
-pandas
-pillow
-numpy
+streamlit
 rembg
-onnxruntime
+Pillow
+numpy
+streamlit-drawable-canvas>=0.9.3
+opencv-python-headless
+watchdog
+
 
