@@ -22,15 +22,14 @@ with tab1:
 
     if bg_file:
         image = Image.open(bg_file)
-        # 중요: streamlit 1.32.0 버전 호환을 위해 use_column_width 사용
-        st.image(image, caption="원본 사진", use_column_width=True) 
+        # 중요: streamlit 1.32.0 호환을 위해 use_column_width 사용
+        st.image(image, caption="원본 사진", use_column_width=True)
 
         if st.button("배경 제거 실행 (AI)"):
             with st.spinner("AI가 배경을 지우는 중입니다..."):
                 try:
                     output = remove(image)
                     st.success("완료!")
-                    # 여기도 use_column_width로 변경
                     st.image(output, caption="배경 제거 결과", use_column_width=True)
 
                     buf = io.BytesIO()
@@ -85,13 +84,14 @@ with tab2:
                         img_array = np.array(resized_image)
                         
                         mask_data = canvas_result.image_data
+                        # 중요: 데이터 타입 변환
                         mask = mask_data[:, :, 3].astype('uint8')
                         
+                        # OpenCV Inpainting
                         inpainted_img = cv2.inpaint(img_array, mask, 3, cv2.INPAINT_TELEA)
                         
                         final_result = Image.fromarray(inpainted_img)
                         st.success("삭제 완료!")
-                        # 여기도 use_column_width로 변경
                         st.image(final_result, caption="지우기 완료!", use_column_width=True)
 
                         buf2 = io.BytesIO()
@@ -107,4 +107,3 @@ with tab2:
                         st.error(f"처리 중 오류가 발생했습니다: {e}")
             else:
                 st.warning("먼저 지우고 싶은 부분을 칠해주세요!")
-
