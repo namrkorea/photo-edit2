@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.elements.image as st_image
 from PIL import Image
 import io
 import numpy as np
@@ -8,25 +9,18 @@ from streamlit_drawable_canvas import st_canvas
 import base64
 
 # ==========================================
-# 🚨 [긴급 패치] 사라진 image_to_url 함수 강제 주입
-# Streamlit 최신 버전에서도 붓 도구가 작동하도록 만드는 코드입니다.
+# 🚨 [시스템 패치] 사라진 image_to_url 함수 복구
+# 이 부분이 있어야 붓 도구가 정상 작동합니다.
 # ==========================================
-import streamlit.elements.image as st_image
-
 def fixed_image_to_url(image, width, clamp, channels, output_format, image_id, allow_emoji=False):
-    """사라진 image_to_url 기능을 Base64로 대체 구현"""
     buffered = io.BytesIO()
-    # 이미지를 PNG로 저장하여 메모리에 올림
     image.save(buffered, format="PNG")
-    # Base64 문자열로 변환
     img_str = base64.b64encode(buffered.getvalue()).decode()
     return f"data:image/png;base64,{img_str}"
 
-# Streamlit 내부에 함수가 없으면 강제로 끼워 넣음
 if not hasattr(st_image, 'image_to_url'):
     st_image.image_to_url = fixed_image_to_url
 # ==========================================
-
 
 # 1. 앱 설정
 st.set_page_config(page_title="AI 매직 포토", page_icon="✨")
@@ -34,11 +28,9 @@ st.set_page_config(page_title="AI 매직 포토", page_icon="✨")
 st.title("✨ AI 매직 포토 에디터")
 st.write("배경을 지우거나, 원하지 않는 물체를 삭제해보세요!")
 
-# 시스템 상태 확인 (패치 적용 여부)
+# 시스템 상태 표시 (성공 시 초록색 박스)
 if hasattr(st_image, 'image_to_url'):
-    st.caption("✅ 시스템 패치 적용 완료 (붓 도구 사용 가능)")
-else:
-    st.error("❌ 패치 적용 실패")
+    st.success("✅ 시스템 정상 가동 중 (모든 기능 사용 가능)")
 
 # 탭 나누기
 tab1, tab2 = st.tabs(["✂️ 배경 제거", "🪄 물체 지우기"])
@@ -50,22 +42,15 @@ with tab1:
 
     if bg_file:
         image = Image.open(bg_file)
-        # 버전 호환성을 위해 안전하게 표시
-        try:
-            st.image(image, caption="원본 사진", use_container_width=True)
-        except:
-            st.image(image, caption="원본 사진", use_column_width=True)
+        # 경고 메시지 해결을 위해 use_column_width 사용
+        st.image(image, caption="원본 사진", use_column_width=True)
 
         if st.button("배경 제거 실행 (AI)"):
             with st.spinner("AI가 배경을 지우는 중입니다..."):
                 try:
                     output = remove(image)
                     st.success("완료!")
-                    
-                    try:
-                        st.image(output, caption="배경 제거 결과", use_container_width=True)
-                    except:
-                        st.image(output, caption="배경 제거 결과", use_column_width=True)
+                    st.image(output, caption="배경 제거 결과", use_column_width=True)
 
                     buf = io.BytesIO()
                     output.save(buf, format="PNG")
@@ -89,18 +74,16 @@ with tab2:
     if erase_file:
         image_to_erase = Image.open(erase_file).convert("RGB")
         
-        # 캔버스 너비 설정 (모바일 최적화)
+        # 캔버스 너비 설정
         canvas_width = 350
         w_percent = (canvas_width / float(image_to_erase.size[0]))
         h_size = int((float(image_to_erase.size[1]) * float(w_percent)))
         
-        # 이미지 리사이징
         resized_image = image_to_erase.resize((canvas_width, h_size))
 
         stroke_width = st.slider("붓 크기 조절", 1, 50, 15)
         
         # 캔버스 그리기
-        # 패치 덕분에 이제 PIL 이미지를 그대로 넣어도 에러가 나지 않습니다.
         try:
             canvas_result = st_canvas(
                 fill_color="rgba(255, 165, 0, 0.3)",
@@ -114,7 +97,7 @@ with tab2:
                 key="canvas",
             )
         except AttributeError:
-            st.error("⚠️ 페이지를 새로고침 해주세요. 패치가 적용 중입니다.")
+            st.error("⚠️ 페이지를 새로고침 해주세요.")
             st.stop()
 
         if st.button("선택한 영역 지우기"):
@@ -129,11 +112,7 @@ with tab2:
                         
                         final_result = Image.fromarray(inpainted_img)
                         st.success("삭제 완료!")
-                        
-                        try:
-                            st.image(final_result, caption="결과", use_container_width=True)
-                        except:
-                            st.image(final_result, caption="결과", use_column_width=True)
+                        st.image(final_result, caption="결과", use_column_width=True)
 
                         buf2 = io.BytesIO()
                         final_result.save(buf2, format="JPEG")
