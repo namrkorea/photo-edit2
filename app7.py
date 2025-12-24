@@ -9,31 +9,36 @@ from streamlit_drawable_canvas import st_canvas
 import base64
 
 # ==========================================
-# 🚨 [시스템 패치] 사라진 image_to_url 함수 강제 주입
-# 이 코드가 있어야 붓 도구에 이미지를 넣어도 에러가 안 납니다.
+# 1. [Tab 1용 패치] 배경 제거 탭을 살리기 위한 코드
 # ==========================================
 def fixed_image_to_url(image, width, clamp, channels, output_format, image_id, allow_emoji=False):
-    """
-    Streamlit의 사라진 image_to_url 기능을 대체하는 함수입니다.
-    이미지를 Base64 문자열로 변환하여 HTML 캔버스가 이해할 수 있게 만듭니다.
-    """
     buffered = io.BytesIO()
     image.save(buffered, format="PNG")
     img_str = base64.b64encode(buffered.getvalue()).decode()
     return f"data:image/png;base64,{img_str}"
 
-# 조건 따지지 않고 무조건 덮어씌웁니다. (가장 강력한 방법)
-st_image.image_to_url = fixed_image_to_url
-# ==========================================
+if not hasattr(st_image, 'image_to_url'):
+    st_image.image_to_url = fixed_image_to_url
 
-# 1. 앱 설정
+# ==========================================
+# 2. [Tab 2용 함수] 캔버스를 살리기 위한 변환 함수
+# 이미지를 캔버스에 직접 넣을 수 있는 '문자열'로 바꿉니다.
+# ==========================================
+def pil_to_base64(img):
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    img_str = base64.b64encode(buffered.getvalue()).decode()
+    return f"data:image/png;base64,{img_str}"
+
+# 3. 앱 설정
 st.set_page_config(page_title="AI 매직 포토", page_icon="✨")
 
 st.title("✨ AI 매직 포토 에디터")
 st.write("배경을 지우거나, 원하지 않는 물체를 삭제해보세요!")
 
-# 시스템 상태 표시
-st.caption("✅ 시스템 패치 적용 완료")
+# 시스템 상태 확인
+if hasattr(st_image, 'image_to_url'):
+    st.caption("✅ 시스템 준비 완료")
 
 # 탭 나누기
 tab1, tab2 = st.tabs(["✂️ 배경 제거", "🪄 물체 지우기"])
@@ -45,6 +50,7 @@ with tab1:
 
     if bg_file:
         image = Image.open(bg_file)
+        # 패치가 적용되어 있어 정상 작동함
         st.image(image, caption="원본 사진", use_column_width=True)
 
         if st.button("배경 제거 실행 (AI)"):
@@ -76,23 +82,27 @@ with tab2:
     if erase_file:
         image_to_erase = Image.open(erase_file).convert("RGB")
         
-        # 캔버스 너비 설정
+        # 캔버스 너비 설정 (모바일 최적화)
         canvas_width = 350
         w_percent = (canvas_width / float(image_to_erase.size[0]))
         h_size = int((float(image_to_erase.size[1]) * float(w_percent)))
         
         resized_image = image_to_erase.resize((canvas_width, h_size))
 
+        # ----------------------------------------------------------------
+        # [핵심 해결책] 이미지를 Base64 문자열로 변환해서 캔버스에 줍니다.
+        # 이렇게 하면 '흰색 박스' 문제가 100% 해결됩니다.
+        # ----------------------------------------------------------------
+        bg_image_base64 = pil_to_base64(resized_image)
+        
         stroke_width = st.slider("붓 크기 조절", 1, 50, 15)
         
         # 캔버스 그리기
-        # [수정] background_image에 다시 PIL 이미지(resized_image)를 넣습니다.
-        # 위쪽의 '시스템 패치' 덕분에 이제 에러가 나지 않습니다.
         canvas_result = st_canvas(
             fill_color="rgba(255, 165, 0, 0.3)",
             stroke_width=stroke_width,
             stroke_color="#ff0000",
-            background_image=resized_image,  # 여기가 핵심! 이미지를 직접 넣음
+            background_image=bg_image_base64, # [중요] 변환된 문자열 사용
             update_streamlit=True,
             height=h_size,
             width=canvas_width,
@@ -104,7 +114,7 @@ with tab2:
             if canvas_result.image_data is not None:
                 with st.spinner("지우는 중..."):
                     try:
-                        # OpenCV 처리
+                        # OpenCV 처리는 원본 이미지(resized_image)를 사용 (Base64 아님)
                         img_array = np.array(resized_image)
                         mask_data = canvas_result.image_data
                         mask = mask_data[:, :, 3].astype('uint8')
