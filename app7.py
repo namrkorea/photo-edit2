@@ -7,10 +7,9 @@ from rembg import remove
 import cv2
 from streamlit_drawable_canvas import st_canvas
 import base64
-import uuid # 캔버스 강제 새로고침을 위한 도구
 
 # ==========================================
-# 🚨 [시스템 패치] 사라진 image_to_url 함수 복구
+# 🚨 [시스템 패치] 사라진 image_to_url 함수 강제 주입
 # ==========================================
 def fixed_image_to_url(image, *args, **kwargs):
     buffered = io.BytesIO()
@@ -67,28 +66,44 @@ with tab2:
     erase_file = st.file_uploader("사진 업로드 (지우기용)", type=["png", "jpg", "jpeg"], key="erase")
 
     if erase_file:
-        # [핵심 수정 1] RGB -> RGBA로 변경 (투명 배경 유지)
-        # 이걸 안 하면 투명한 부분이 검은색이 되어 이미지가 안 보입니다.
-        image_to_erase = Image.open(erase_file).convert("RGBA")
+        # 1. 이미지 열기
+        origin_image = Image.open(erase_file)
         
         # 캔버스 너비 설정 (모바일 최적화)
-        canvas_width = 375 # 아이폰 등 모바일 폭에 맞게 조금 늘림
-        w_percent = (canvas_width / float(image_to_erase.size[0]))
-        h_size = int((float(image_to_erase.size[1]) * float(w_percent)))
+        canvas_width = 350
+        w_percent = (canvas_width / float(origin_image.size[0]))
+        h_size = int((float(origin_image.size[1]) * float(w_percent)))
         
-        resized_image = image_to_erase.resize((canvas_width, h_size))
+        # 2. 리사이징 (크기 조정)
+        resized_image = origin_image.resize((canvas_width, h_size))
+
+        # ------------------------------------------------------------------
+        # [핵심 해결책] 캔버스 표시용 이미지 만들기 (RGB 변환)
+        # 투명한 부분(Alpha)이 있으면 캔버스에서 안 보일 수 있으므로,
+        # 흰색 배경을 강제로 깔아서 '눈에 보이게' 만듭니다.
+        # ------------------------------------------------------------------
+        if resized_image.mode in ('RGBA', 'LA'):
+            # 흰색 배경 생성
+            background = Image.new("RGB", resized_image.size, (255, 255, 255))
+            # 이미지 합성 (투명한 곳은 흰색이 됨)
+            background.paste(resized_image, mask=resized_image.split()[-1])
+            image_for_canvas = background
+        else:
+            image_for_canvas = resized_image.convert("RGB")
+        # ------------------------------------------------------------------
 
         stroke_width = st.slider("붓 크기 조절", 1, 50, 15)
         
-        # [핵심 수정 2] 파일이 바뀔 때마다 캔버스를 강제로 새로 그리기 위한 키 설정
+        # 파일이 바뀔 때마다 캔버스 새로고침용 키
         dynamic_key = f"canvas_{erase_file.name}_{erase_file.size}"
 
         # 캔버스 그리기
+        # background_image에 'image_for_canvas'(흰색 배경 처리된 이미지)를 넣습니다.
         canvas_result = st_canvas(
             fill_color="rgba(255, 165, 0, 0.3)",
             stroke_width=stroke_width,
             stroke_color="#ff0000",
-            background_image=resized_image, # RGBA 이미지를 넣습니다.
+            background_image=image_for_canvas, # [중요] 변환된 이미지 사용
             update_streamlit=True,
             height=h_size,
             width=canvas_width,
@@ -100,17 +115,14 @@ with tab2:
             if canvas_result.image_data is not None:
                 with st.spinner("지우는 중..."):
                     try:
-                        # OpenCV 처리를 위해 잠시 RGB로 변환 (알고리즘 호환성)
-                        # 배경이 투명하면 흰색으로 채워서 처리
-                        background = Image.new("RGB", resized_image.size, (255, 255, 255))
-                        background.paste(resized_image, mask=resized_image.split()[3]) # 3은 알파 채널
-                        img_for_cv = np.array(background)
+                        # 처리할 때는 'image_for_canvas' (RGB)를 사용
+                        img_array = np.array(image_for_canvas)
                         
                         mask_data = canvas_result.image_data
                         mask = mask_data[:, :, 3].astype('uint8')
                         
-                        # Inpainting 실행
-                        inpainted_img = cv2.inpaint(img_for_cv, mask, 3, cv2.INPAINT_TELEA)
+                        # OpenCV Inpainting
+                        inpainted_img = cv2.inpaint(img_array, mask, 3, cv2.INPAINT_TELEA)
                         
                         final_result = Image.fromarray(inpainted_img)
                         st.success("삭제 완료!")
